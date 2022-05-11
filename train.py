@@ -1,6 +1,7 @@
 import argparse
 import logging
 import math
+import multiprocessing
 import os
 import random
 import time
@@ -40,6 +41,8 @@ try:
 except ImportError:
     wandb = None
     logger.info("Install Weights & Biases for experiment logging via 'pip install wandb' (recommended)")
+
+
 
 def train(hyp, opt, device, tb_writer=None, wandb=None):
     logger.info(f'Hyperparameters {hyp}')
@@ -456,6 +459,10 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    try:
+        multiprocessing.set_start_method("spawn")
+    except:
+        ...
     parser.add_argument('--weights', type=str, default='yolov4-csp.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco.yaml', help='data.yaml path')

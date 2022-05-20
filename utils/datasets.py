@@ -23,6 +23,7 @@ import pickle
 from copy import deepcopy
 from pycocotools import mask as maskUtils
 from torchvision.utils import save_image
+import torchvision
 
 from utils.general import xyxy2xywh, xywh2xyxy
 from utils.torch_utils import torch_distributed_zero_first
@@ -53,7 +54,7 @@ for orientation in ExifTags.TAGS.keys():
         break
 
 #Stuff for neural style transfer
-device="cuda"
+device = "cpu" #"cuda"
 style_img = cv2.imread('/yolo/soil.jpg')
 loader = transforms.Compose([transforms.ToTensor()])
 unloader = transforms.ToPILImage()
@@ -96,8 +97,8 @@ class StyleLoss(nn.Module):
         self.loss = F.mse_loss(G, self.target)
         return input
 
-cnn = models.vgg19(pretrained=True).features.to(device).eval()
-
+# cnn = models.vgg19(pretrained=True).features.to(device).eval()
+cnn = models.mobilenet_v3_large(pretrained=True).features.to(device).eval()
 cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(device)
 cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(device)
 
@@ -122,6 +123,10 @@ def get_hash(files):
 # desired depth layers to compute style/content losses :
 content_layers_default = ['conv_4']
 style_layers_default = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
+
+#Comment out the following two when switching back to VGG16
+content_layers_default = ['inv_res_6']
+style_layers_default = ['inv_res_4',  'inv_res_5', 'inv_res_6', 'inv_res_7']
 
 def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
                                style_img, content_img,
@@ -154,6 +159,14 @@ def get_style_model_and_losses(cnn, normalization_mean, normalization_std,
             name = 'pool_{}'.format(i)
         elif isinstance(layer, nn.BatchNorm2d):
             name = 'bn_{}'.format(i)
+        
+        #MobileNet Layers
+        elif isinstance(layer, torchvision.models.mobilenetv3.InvertedResidual):
+            i+= 1
+            name='inv_res_{}'.format(i)
+        elif isinstance(layer, torchvision.ops.misc.ConvNormActivation):
+            name='conv_act_{}'.format(i)
+
         else:
             raise RuntimeError('Unrecognized layer: {}'.format(layer.__class__.__name__))
 
@@ -188,7 +201,7 @@ def get_input_optimizer(input_img):
     return optimizer
 
 def run_style_transfer(cnn, normalization_mean, normalization_std,
-                       content_img, style_img, input_img, num_steps=300,
+                       content_img, style_img, input_img, num_steps=150,
                        style_weight=1000000, content_weight=1):
     """Run the style transfer."""
     #print('Building the style transfer model..')
@@ -208,7 +221,7 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
 
     optimizer = get_input_optimizer(input_img)
 
-    #print('Optimizing..')
+    # print('Optimizing..')
     run = [0]
     while run[0] <= num_steps:
 
@@ -235,10 +248,10 @@ def run_style_transfer(cnn, normalization_mean, normalization_std,
 
             run[0] += 1
             if run[0] % 50 == 0:
-                #print("run {}:".format(run))
-                #print('Style Loss : {:4f} Content Loss: {:4f}'.format(
+                # print("run {}:".format(run))
+                # print('Style Loss : {:4f} Content Loss: {:4f}'.format(
                 #    style_score.item(), content_score.item()))
-                #print()
+                # print()
                 ...
 
             return style_score + content_score
@@ -1143,7 +1156,7 @@ def load_image(self, index):
 
         if np.random.binomial(1,0.3, 1):
             img = run_style_transfer(cnn, cnn_normalization_mean, cnn_normalization_std,
-                            deepcopy(img), cv2.resize(style_img, (int(w0 * r), int(h0 * r)), interpolation=interp), img, style_weight=10000, content_weight=1, num_steps=100)
+                            deepcopy(img), cv2.resize(style_img, (int(w0 * r), int(h0 * r)), interpolation=interp), img, style_weight=10000, content_weight=1, num_steps=150)
             img = np.asarray(unloader(img.squeeze(0)), dtype=np.uint8)
             #img = img.detach().cpu().numpy()
             if len(img.shape) > 3:
